@@ -2435,6 +2435,8 @@ class KojiBuildTargetModel(GroupAndTargetModelConnector, Base):
     # metadata is reserved to sqlalch
     data = Column(JSON)
 
+    sidetag = Column(String)
+
     # it is a scratch build?
     scratch = Column(Boolean)
     koji_build_group_id = Column(Integer, ForeignKey("koji_build_groups.id"))
@@ -2548,6 +2550,7 @@ class KojiBuildTargetModel(GroupAndTargetModelConnector, Base):
         status: str,
         scratch: bool,
         koji_build_group: "KojiBuildGroupModel",
+        sidetag: Optional[str] = None,
     ) -> "KojiBuildTargetModel":
         with sa_session_transaction(commit=True) as session:
             build = cls()
@@ -2556,6 +2559,7 @@ class KojiBuildTargetModel(GroupAndTargetModelConnector, Base):
             build.web_url = web_url
             build.target = target
             build.scratch = scratch
+            build.sidetag = sidetag
             session.add(build)
 
             koji_build_group.koji_build_targets.append(build)
