@@ -10,6 +10,7 @@ from flexmock import flexmock
 from ogr.abstract import PRStatus
 from ogr.services.github import GithubProject
 from ogr.services.pagure import PagureProject
+from packit.distgit import DistGit
 from packit.api import PackitAPI
 from packit.config import (
     CommonPackageConfig,
@@ -245,27 +246,12 @@ def test_downstream_koji_build(sidetag_group):
         db_project_event
     )
     flexmock(PipelineModel).should_receive("create")
-    koji_build = flexmock(
-        target="main",
-        status="queued",
-        set_status=lambda x: None,
-        set_task_id=lambda x: None,
-        set_web_url=lambda x: None,
-        set_build_logs_urls=lambda x: None,
-        set_data=lambda x: None,
-    )
-
-    flexmock(KojiBuildTargetModel).should_receive("create").and_return(koji_build)
-    flexmock(KojiBuildGroupModel).should_receive("create").and_return(
-        flexmock(grouped_targets=[koji_build])
-    )
 
     if sidetag_group:
-        koji_target = "f40-build-side-12345"
-        sidetag = flexmock(koji_name=None)
+        sidetag = "f40-build-side-12345"
 
         flexmock(SidetagModel).should_receive("get_or_create_for_updating").and_return(
-            sidetag
+            flexmock(koji_name=sidetag)
         )
         flexmock(SidetagGroupModel).should_receive("get_or_create").and_return(
             flexmock()
@@ -273,8 +259,31 @@ def test_downstream_koji_build(sidetag_group):
         flexmock(KojiHelper).should_receive("get_tag_info").and_return(None)
         flexmock(PackitAPI).should_receive("init_kerberos_ticket").and_return(None)
         flexmock(KojiHelper).should_receive("create_sidetag").and_return(
-            {"name": koji_target}
+            {"name": sidetag}
         )
+
+    nvr = "package-1.2.3-1.fc40"
+    koji_build = flexmock(
+        target="main",
+        status="queued",
+        sidetag=sidetag if sidetag_group else None,
+        nvr=nvr,
+        set_status=lambda x: None,
+        set_task_id=lambda x: None,
+        set_web_url=lambda x: None,
+        set_build_logs_urls=lambda x: None,
+        set_data=lambda x: None,
+    )
+
+    flexmock(DistGit).should_receive("get_nvr").and_return(nvr)
+
+    flexmock(KojiBuildTargetModel).should_receive("create").and_return(koji_build)
+    flexmock(KojiBuildTargetModel).should_receive(
+        "get_all_successful_or_in_progress_by_nvr"
+    ).and_return({koji_build})
+    flexmock(KojiBuildGroupModel).should_receive("create").and_return(
+        flexmock(grouped_targets=[koji_build])
+    )
 
     flexmock(LocalProjectBuilder, _refresh_the_state=lambda *args: None)
     flexmock(group).should_receive("apply_async").once()
@@ -284,11 +293,8 @@ def test_downstream_koji_build(sidetag_group):
         scratch=False,
         nowait=True,
         from_upstream=False,
-        koji_target=koji_target if sidetag_group else None,
+        koji_target=sidetag if sidetag_group else None,
     ).and_return("")
-    flexmock(DownstreamKojiBuildHandler).should_receive(
-        "is_already_triggered"
-    ).and_return(False)
     processing_results = SteveJobs().process_message(distgit_commit_event())
     event_dict, job, job_config, package_config = get_parameters_from_results(
         processing_results
@@ -351,9 +357,14 @@ def test_downstream_koji_build_failure_no_issue():
         db_project_event
     )
     flexmock(PipelineModel).should_receive("create")
+
+    nvr = "package-1.2.3-1.fc40"
+
     koji_build = flexmock(
         target="main",
         status="queued",
+        sidetag=None,
+        nvr=nvr,
         set_status=lambda x: None,
         set_task_id=lambda x: None,
         set_web_url=lambda x: None,
@@ -361,7 +372,12 @@ def test_downstream_koji_build_failure_no_issue():
         set_data=lambda x: None,
     )
 
+    flexmock(DistGit).should_receive("get_nvr").and_return(nvr)
+
     flexmock(KojiBuildTargetModel).should_receive("create").and_return(koji_build)
+    flexmock(KojiBuildTargetModel).should_receive(
+        "get_all_successful_or_in_progress_by_nvr"
+    ).and_return({koji_build})
     flexmock(KojiBuildGroupModel).should_receive("create").and_return(
         flexmock(id=1, grouped_targets=[koji_build])
     )
@@ -376,9 +392,6 @@ def test_downstream_koji_build_failure_no_issue():
         from_upstream=False,
         koji_target=None,
     ).and_raise(PackitException, "Some error")
-    flexmock(DownstreamKojiBuildHandler).should_receive(
-        "is_already_triggered"
-    ).and_return(False)
 
     pagure_project_mock.should_receive("get_issue_list").times(0)
     pagure_project_mock.should_receive("create_issue").times(0)
@@ -445,9 +458,14 @@ def test_downstream_koji_build_failure_issue_created():
         db_project_event
     )
     flexmock(PipelineModel).should_receive("create")
+
+    nvr = "package-1.2.3-1.fc40"
+
     koji_build = flexmock(
         target="main",
         status="queued",
+        sidetag=None,
+        nvr=nvr,
         set_status=lambda x: None,
         set_task_id=lambda x: None,
         set_web_url=lambda x: None,
@@ -455,7 +473,12 @@ def test_downstream_koji_build_failure_issue_created():
         set_data=lambda x: None,
     )
 
+    flexmock(DistGit).should_receive("get_nvr").and_return(nvr)
+
     flexmock(KojiBuildTargetModel).should_receive("create").and_return(koji_build)
+    flexmock(KojiBuildTargetModel).should_receive(
+        "get_all_successful_or_in_progress_by_nvr"
+    ).and_return({koji_build})
     flexmock(KojiBuildGroupModel).should_receive("create").and_return(
         flexmock(grouped_targets=[koji_build])
     )
@@ -469,9 +492,6 @@ def test_downstream_koji_build_failure_issue_created():
         from_upstream=False,
         koji_target=None,
     ).and_raise(PackitException, "Some error")
-    flexmock(DownstreamKojiBuildHandler).should_receive(
-        "is_already_triggered"
-    ).and_return(False)
 
     issue_project_mock = flexmock(GithubProject)
     issue_project_mock.should_receive("get_issue_list").and_return([]).once()
@@ -545,9 +565,14 @@ def test_downstream_koji_build_failure_issue_comment():
         db_project_event
     )
     flexmock(PipelineModel).should_receive("create")
+
+    nvr = "package-1.2.3-1.fc40"
+
     koji_build = flexmock(
         target="main",
         status="queued",
+        sidetag=None,
+        nvr=nvr,
         set_status=lambda x: None,
         set_task_id=lambda x: None,
         set_web_url=lambda x: None,
@@ -555,7 +580,12 @@ def test_downstream_koji_build_failure_issue_comment():
         set_data=lambda x: None,
     )
 
+    flexmock(DistGit).should_receive("get_nvr").and_return(nvr)
+
     flexmock(KojiBuildTargetModel).should_receive("create").and_return(koji_build)
+    flexmock(KojiBuildTargetModel).should_receive(
+        "get_all_successful_or_in_progress_by_nvr"
+    ).and_return({koji_build})
     flexmock(KojiBuildGroupModel).should_receive("create").and_return(
         flexmock(grouped_targets=[koji_build])
     )
@@ -570,9 +600,6 @@ def test_downstream_koji_build_failure_issue_comment():
         from_upstream=False,
         koji_target=None,
     ).and_raise(PackitException, "Some error")
-    flexmock(DownstreamKojiBuildHandler).should_receive(
-        "is_already_triggered"
-    ).and_return(False)
 
     issue_project_mock = flexmock(GithubProject)
     issue_project_mock.should_receive("get_issue_list").and_return(
@@ -727,9 +754,14 @@ def test_downstream_koji_build_where_multiple_branches_defined(jobs_config):
         db_project_event
     )
     flexmock(PipelineModel).should_receive("create")
+
+    nvr = "package-1.2.3-1.fc40"
+
     koji_build = flexmock(
         target="main",
         status="queued",
+        sidetag=None,
+        nvr=nvr,
         set_status=lambda x: None,
         set_task_id=lambda x: None,
         set_web_url=lambda x: None,
@@ -737,7 +769,12 @@ def test_downstream_koji_build_where_multiple_branches_defined(jobs_config):
         set_data=lambda x: None,
     )
 
+    flexmock(DistGit).should_receive("get_nvr").and_return(nvr)
+
     flexmock(KojiBuildTargetModel).should_receive("create").and_return(koji_build)
+    flexmock(KojiBuildTargetModel).should_receive(
+        "get_all_successful_or_in_progress_by_nvr"
+    ).and_return({koji_build})
     flexmock(KojiBuildGroupModel).should_receive("create").and_return(
         flexmock(grouped_targets=[koji_build])
     )
@@ -759,9 +796,6 @@ def test_downstream_koji_build_where_multiple_branches_defined(jobs_config):
         from_upstream=False,
         koji_target=None,
     ).once().and_return("")
-    flexmock(DownstreamKojiBuildHandler).should_receive(
-        "is_already_triggered"
-    ).and_return(False)
 
     processing_results = SteveJobs().process_message(distgit_commit_event())
     assert len(processing_results) == 1
